@@ -15,6 +15,7 @@ public class CloseFrame extends ControlFrame{
      * 客户端协议错误导致连接关闭
      */
     public static final int PROTOCOL_ERROR = 1002;
+    public static final int ABNORMAL_CLOSE = 1006;
 
     public CloseFrame(OpCode opCode) {
         super(opCode);

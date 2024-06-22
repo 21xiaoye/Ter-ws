@@ -6,19 +6,23 @@ import org.ter_ws.AbstractWebSocket;
 import org.ter_ws.WebSocket;
 import org.ter_ws.WebSocketImpl;
 import org.ter_ws.drafts.Draft;
+import org.ter_ws.exceptions.WrappedIOException;
 import org.ter_ws.framing.CloseFrame;
+import org.ter_ws.handshake.ClientHandshake;
+import org.ter_ws.handshake.HandshakeData;
 import sun.plugin.dom.exception.InvalidStateException;
 
+import javax.jws.Oneway;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.InterfaceAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.*;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -165,9 +169,102 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         return Collections.unmodifiableList(draftLists);
     }
 
+    @Override
+    public void onWebsocketMessage(WebSocket conn, String message) {
+        onMessage(conn, message);
+    }
+
+    @Override
+    public void onWebSocketMessage(WebSocket conn, ByteBuffer byteBuffer) {
+        onMessage(conn, byteBuffer);
+    }
+
+    @Override
+    public void onWebSocketOpen(WebSocket conn, HandshakeData handshakeData) {
+        onOpen(conn, (ClientHandshake) handshakeData);
+    }
+
+    @Override
+    public void onWebsocketError(WebSocket conn, Exception ex) {
+        onError(conn, ex);
+    }
+
+
+    @Override
+    public InetSocketAddress getLocalSocketAddress(WebSocket conn) {
+        return (InetSocketAddress) getSocket(conn).getLocalSocketAddress();
+    }
+
+    @Override
+    public InetSocketAddress getRemoteSocketAddress(WebSocket conn) {
+        return (InetSocketAddress) getSocket(conn).getRemoteSocketAddress();
+    }
+
+    private Socket getSocket(WebSocket conn){
+        WebSocketImpl webSocketImpl = (WebSocketImpl) conn;
+        return ((SocketChannel) webSocketImpl.getSelectionKey().channel()).socket();
+    }
+
+    @Override
+    public void onWriteDemand(WebSocket conn) {
+
+    }
+    @Override
+    public final void onWebSocketClose(WebSocket conn, HandshakeData handshakeData) {
+
+    }
+    @Override
+    public void onWebSocketClosing(WebSocket conn, int code, String reason, boolean remote) {
+
+    }
+    @Override
+    public void onWebSocketCloseInitiated(WebSocket ws, int code, String reason) {
+
+    }
+    /**
+     * 握手成功之后调用
+     *
+     * @param conn
+     * @param clientHandshake
+     */
+    public abstract void onOpen(WebSocket conn, ClientHandshake clientHandshake);
+
+    /**
+     * 连接关闭
+     *
+     * @param conn
+     * @param code
+     * @param reason
+     * @param remote
+     */
+    public abstract void onClose(WebSocket conn, int code, String reason, boolean remote);
+
+    /**
+     * 处理接收消息
+     *
+     * @param conn
+     * @param message
+     */
+    public abstract void onMessage(WebSocket conn, String message);
+    public abstract void onMessage(WebSocket conn, ByteBuffer byteBuffer);
+
+    /**
+     * WebSocket服务器启动时调用
+     */
     public abstract void onStart();
+
+    /**
+     * 发生错误时调用
+     *
+     * @param conn
+     * @param exception
+     */
+    public abstract void onError(WebSocket conn, Exception exception);
     public void run(){
         if(!doEnsureSingleThread()){
+            return;
+        }
+        if(!doSetupSelectorAndServerThread()){
             return;
         }
         try {
@@ -179,10 +276,47 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
                     if(isClosed.get()){
                         selectTimeout = 5;
                     }
-                }catch (Exception exception){
 
+                    int keyCount = selector.select(selectTimeout);
+                    if(keyCount == 0 && isClosed.get()){
+                        shutdownCount--;
+                    }
+
+                    Set<SelectionKey> selectionKeys = selector.selectedKeys();
+                    Iterator<SelectionKey> iterator = selectionKeys.iterator();
+                    while (iterator.hasNext()){
+                        key = iterator.next();
+                        if(!key.isValid()){
+                            continue;
+                        }
+                        if(key.isAcceptable()){
+                            doAccept(key, iterator);
+                            continue;
+                        }
+                        if(key.isReadable() && !doRead(key, iterator)){
+                            continue;
+                        }
+                        if(key.isWritable()){
+                            doWrite(key);
+                        }
+                        doAdditionalRead();
+                    }
+                }catch (CancellationException cancellationException){
+
+                }catch (ClosedByInterruptException closedByInterruptException){
+                    return;
+                }catch (WrappedIOException wrappedIOException){
+                    handleIOException(key, wrappedIOException.getWebSocket(), wrappedIOException.getIoException());
+                }catch (IOException ioException){
+                    handleIOException(key, null, ioException);
+                }catch (InterruptedException interruptedException){
+                    Thread.currentThread().interrupt();
                 }
             }
+        }catch (RuntimeException exception){
+            handleFatal(null, exception);
+        }finally {
+            System.out.println("关掉服务....");
         }
     }
     private boolean doEnsureSingleThread(){
@@ -211,13 +345,97 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
                 webSocketWorker.start();
             }
             onStart();
-
         }catch (IOException exception){
+            handleFatal(null, exception);
             return false;
         }
         return true;
     }
 
+    private void handleFatal(WebSocket conn, Exception exception){
+        logger.error("Shutdown due to fatal error", exception);
+        onError(conn, exception);
+
+        String causeMessage = Objects.nonNull(exception.getCause()) ? "caused by"+ exception.getMessage().getClass().getName() : "";
+        String errorMessage = "Got error on server side:" + exception.getClass().getName() + causeMessage;
+
+        try {
+            this.stop(0, errorMessage);
+        }catch (InterruptedException ex){
+            Thread.currentThread().interrupt();
+            logger.error("Interrupt during stop", 0);
+            onError(null, ex);
+        }
+    }
+    private void handleIOException(SelectionKey key, WebSocket conn, IOException ex) {
+        if (key != null) {
+            key.cancel();
+        }
+        if (conn != null) {
+            conn.closeConnection(CloseFrame.ABNORMAL_CLOSE, ex.getMessage());
+        } else if (key != null) {
+            SelectableChannel channel = key.channel();
+            if (channel != null && channel
+                    .isOpen()) {
+                try {
+                    channel.close();
+                } catch (IOException e) {
+                }
+                logger.trace("Connection closed because of exception", ex);
+            }
+        }
+    }
+    private void doAccept(SelectionKey selectionKey, Iterator<SelectionKey> iterator)
+            throws IOException, InterruptedException{
+        if(!onConnect(selectionKey)){
+            selectionKey.cancel();
+            return;
+        }
+        SocketChannel channel = this.server.accept();
+        if(Objects.isNull(channel)){
+            return;
+        }
+        channel.configureBlocking(false);
+        Socket socket = channel.socket();
+        socket.setKeepAlive(true);
+    }
+
+    private boolean doRead(SelectionKey selectionKey, Iterator<SelectionKey> iterator)
+            throws InterruptedException, WrappedIOException{
+        WebSocketImpl conn = (WebSocketImpl)selectionKey.attachment();
+        if(Objects.isNull(conn.getChannel())){
+            selectionKey.cancel();
+
+            return false;
+        }
+        return true;
+    }
+    private void doWrite(SelectionKey selectionKey) throws WrappedIOException{
+        WebSocketImpl conn = (WebSocketImpl) selectionKey.attachment();
+
+     }
+     private void doAdditionalRead() throws InterruptedException, IOException{
+        WebSocketImpl conn;
+        while (!webSocketImplList.isEmpty()){
+            conn = webSocketImplList.remove(0);
+            conn.getChannel();
+        }
+     }
+    /**
+     * 是否接收连接
+     *
+     * @param key
+     * @return
+     */
+    protected boolean onConnect(SelectionKey key) {
+        return true;
+    }
+    private void pushBuffer(ByteBuffer buffer) throws InterruptedException{
+        if(buffers.size() > queueSize.intValue()){
+            return;
+        }
+        buffers.put(buffer);
+    }
     public class WebSocketWorker extends Thread{
         private BlockingQueue<WebSocketImpl> webSocketBlockingQueue;
 
@@ -232,7 +450,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             });
         }
 
-        public void put(WebSocketImpl webSocket) throws  InterruptedException{
+        public void put(WebSocketImpl webSocket) throws InterruptedException{
             webSocketBlockingQueue.put(webSocket);
         }
 
@@ -266,7 +484,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             }catch (Exception e){
                 logger.error("Error while reading from remote connection",e);
             }finally {
-
+                pushBuffer(buffer);
             }
         }
     }

@@ -1,4 +1,4 @@
 package org.ter_ws.drafts;
 
-public class Draft_6455 {
+public class Draft_6455 extends Draft{
 }

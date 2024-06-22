@@ -8,6 +8,8 @@ import org.ter_ws.protocols.IProtocol;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.ByteChannel;
+import java.nio.channels.SelectionKey;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 
@@ -26,8 +28,10 @@ public class WebSocketImpl implements WebSocket{
      * 连接状态
      */
     private volatile ReadyState readyState = ReadyState.NOT_YET_CONNECTED;
-    public final BlockingQueue<ByteBuffer> inQueue;
 
+    private ByteChannel channel;
+    public final BlockingQueue<ByteBuffer> inQueue;
+    private SelectionKey selectionKey;
     public WebSocketImpl() {
         inQueue = new LinkedBlockingDeque<>();
     }
@@ -144,5 +148,13 @@ public class WebSocketImpl implements WebSocket{
     @Override
     public IProtocol getProtocol() {
         return null;
+    }
+
+    public SelectionKey getSelectionKey() {
+        return selectionKey;
+    }
+
+    public ByteChannel getChannel() {
+        return channel;
     }
 }
