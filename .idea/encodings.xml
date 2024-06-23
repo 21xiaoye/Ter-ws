@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/src/main/java/ChatServer.java" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/ws/Main.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/ws/WebSocketListener.java" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/ws/enums/ReadyState.java" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/ws/enums/Role.java" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/ws/enums/package-info.java" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/ws/exceptions/InvalidDataException.java" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/ws/exceptions/package-info.java" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/ws/server/package-info.java" charset="GBK" />
+    <file url="PROJECT" charset="GBK" />
+  </component>
+</project>
