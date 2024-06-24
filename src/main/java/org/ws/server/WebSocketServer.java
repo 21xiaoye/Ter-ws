@@ -15,6 +15,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
+import java.security.Key;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -205,7 +206,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
 
     }
     @Override
-    public final void onWebSocketClose(WebSocket conn, HandshakeData handshakeData) {
+    public final void onWebSocketClose(WebSocket conn, int code, String reason, boolean remote) {
 
     }
     @Override
@@ -398,6 +399,11 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         channel.configureBlocking(false);
         Socket socket = channel.socket();
         socket.setKeepAlive(true);
+        WebSocketImpl webSocketImpl = webSocketServerFactory.createdWebSocket(this, draftLists);
+        webSocketImpl.setSelectionKey(channel.register(selector, SelectionKey.OP_READ, webSocketImpl));
+
+        iterator.remove();
+        allocateBuffers(webSocketImpl);
     }
 
     private boolean doRead(SelectionKey selectionKey, Iterator<SelectionKey> iterator)
@@ -415,7 +421,8 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
                     conn.inQueue.put(buffer);
                     queue(conn);
                     iterator.remove();
-                    if(conn.getChannel() instanceof  WrappedByteChannel &((WrappedByteChannel)conn.getChannel()).isNeedRead()){
+                    if(conn.getChannel() instanceof  WrappedByteChannel &&
+                            ((WrappedByteChannel)conn.getChannel()).isNeedRead()){
                         webSocketImplList.add(conn);
                     }
                 }else{
@@ -426,12 +433,19 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             }
         }catch (IOException exception){
             pushBuffer(buffer);
-            throw  new WrappedIOException(conn, exception);
+            throw new WrappedIOException(conn, exception);
         }
         return true;
     }
     private void doWrite(SelectionKey selectionKey) throws WrappedIOException {
         WebSocketImpl conn = (WebSocketImpl) selectionKey.attachment();
+        try {
+            if (SocketChannelIOHelper.batch(conn, conn.getChannel()) && selectionKey.isValid()) {
+                selectionKey.interestOps(SelectionKey.OP_READ);
+            }
+        }catch (IOException exception){
+            throw new WrappedIOException(conn, exception);
+        }
 
     }
     private void doAdditionalRead() throws InterruptedException, IOException{
@@ -440,6 +454,16 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             conn = webSocketImplList.remove(0);
             conn.getChannel();
         }
+    }
+    protected void allocateBuffers(WebSocket webSocket) throws InterruptedException{
+        if(queueSize.get() >= 2 * decoders.size()+1){
+            return;
+        }
+        queueSize.incrementAndGet();
+        buffers.put(createBuffer());
+    }
+    public ByteBuffer createBuffer(){
+        return ByteBuffer.allocate(DEFAULT_READ_BUFFER_SIZE);
     }
     /**
      * 是否接收连接

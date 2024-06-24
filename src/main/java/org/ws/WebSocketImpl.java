@@ -4,13 +4,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.ws.draft.Draft;
 import org.ws.draft.Draft_6455;
+import org.ws.enums.HandshakeState;
 import org.ws.enums.ReadyState;
 import org.ws.enums.Role;
+import org.ws.exceptions.InvalidDataException;
+import org.ws.exceptions.InvalidHandshakeException;
+import org.ws.framing.CloseFrame;
 import org.ws.framing.FrameData;
 import org.ws.handshake.ClientHandshake;
+import org.ws.handshake.HandshakeData;
+import org.ws.handshake.ServerHandshake;
+import org.ws.handshake.ServerHandshakeBuilder;
 import org.ws.protocols.IProtocol;
 import org.ws.server.WebSocketServer;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
@@ -94,15 +102,159 @@ public class WebSocketImpl implements WebSocket{
 
         if(readyState != ReadyState.NOT_YET_CONNECTED){
             if(readyState == ReadyState.OPEN){
-
+                decodeFrame(socketBuffer);
             }
         }else{
-//            if()
+            if(decodeHandshake(socketBuffer) && (!isClosing() && !isClosed())){
+                assert (tmpHandshakeBytes.hasRemaining() != socketBuffer.hasRemaining() || !socketBuffer.hasRemaining());
+                if(socketBuffer.hasRemaining()){
+                    decodeFrame(socketBuffer);
+                }
+                if(tmpHandshakeBytes.hasRemaining()){
+                    decodeFrame(tmpHandshakeBytes);
+                }
+            }
         }
     }
 
-//    private void
-
+    private boolean decodeHandshake(ByteBuffer socketBufferNew){
+        ByteBuffer socketBuffer;
+        if(tmpHandshakeBytes.capacity() == 0){
+            socketBuffer =socketBufferNew;
+        }else{
+            if(tmpHandshakeBytes.remaining() < socketBufferNew.remaining()){
+                ByteBuffer buffer = ByteBuffer.allocate(tmpHandshakeBytes.capacity() + socketBufferNew.remaining());
+                tmpHandshakeBytes.flip();
+                buffer.put(tmpHandshakeBytes);
+                tmpHandshakeBytes = buffer;
+            }
+            tmpHandshakeBytes.put(socketBufferNew);
+            tmpHandshakeBytes.flip();
+            socketBuffer = tmpHandshakeBytes;
+        }
+        socketBuffer.mark();
+        try {
+            HandshakeState handshakeState;
+            try {
+                if(role == Role.SERVER){
+                    if(Objects.isNull(draft)){
+                        for (Draft d : draftList) {
+                            d = d.copyInstance();
+                            try {
+                                d.setRole(role);
+                                socketBuffer.reset();
+                                HandshakeData handshakeData =  d.translateHandshake(socketBuffer);
+                                if(!(handshakeData instanceof ClientHandshake)){
+                                    logger.trace("Closing due to wrong handshake");
+                                    return false;
+                                }
+                                ClientHandshake handshake = (ClientHandshake) handshakeData;
+                                handshakeState = d.acceptHandshakeAsServer(handshake);
+                                if(handshakeState == HandshakeState.MATCHED){
+                                    resourceDescriptor = handshake.getResourceDescriptor();
+                                    ServerHandshakeBuilder serverHandshakeBuilder;
+                                    try {
+                                        serverHandshakeBuilder = webSocketListener.onWebSocketHandshakeReceivedAsServer(this, d, handshake);
+                                    }catch (InvalidDataException exception){
+                                        logger.trace("Closing due to wrong handshake, Possible handshake rejection",exception);
+                                        return false;
+                                    }catch (RuntimeException exception){
+                                        logger.error("Closing due to internal server error",exception);
+                                        webSocketListener.onWebsocketError(this, exception);
+                                        return false;
+                                    }
+                                    draft = d;
+                                    return true;
+                                }
+                            }catch (InvalidHandshakeException exception){
+                                logger.info("go on with an other draft");
+                            }
+                        }
+                        if(Objects.isNull(draft)){
+                            logger.trace("Closing due to protocol error: no draft matches");
+                            return false;
+                        }
+                    } else{
+                        HandshakeData handshakeData = draft.translateHandshake(socketBuffer);
+                        if(!(handshakeData instanceof  ClientHandshake)){
+                            logger.trace("Closing due to protocol error: wrong http function");
+                            flushAndClose(CloseFrame.PROTOCOL_ERROR, "wrong http function", false);
+                            return false;
+                        }
+                        ClientHandshake handshake = (ClientHandshake) handshakeData;
+                        handshakeState = draft.acceptHandshakeAsServer(handshake);
+                        if(handshakeState == HandshakeState.MATCHED){
+                            return true;
+                        }else {
+                            logger.trace("Closing due to protocol error: the handshake did finally not match");
+                        }
+                        return false;
+                    }
+                } else if (role == Role.CLIENT) {
+                    draft.setRole(role);
+                    HandshakeData handshakeData = draft.translateHandshake(socketBuffer);
+                    if(!(handshakeData instanceof ServerHandshake)){
+                        logger.trace("Closing due to protocol error: wrong http function");
+                        flushAndClose(CloseFrame.PROTOCOL_ERROR, "wrong http function", false);
+                        return false;
+                    }
+                    ServerHandshake handshake = (ServerHandshake) handshakeData;
+                    handshakeState = draft.acceptHandshakeAsClient(clientHandshake ,handshake);
+                    if(handshakeState == HandshakeState.MATCHED){
+                        try {
+                            webSocketListener.onWebsocketHandshakeReceivedAsClient(this, clientHandshake, handshake);
+                        }catch (InvalidDataException exception){
+                            logger.trace("Closing due to invalid data exception. Possible handshake rejection",exception);
+                            flushAndClose(exception.getCloseCode(), exception.getMessage(), false);
+                            return false;
+                        }catch (RuntimeException exception){
+                            logger.error("Closing due to invalid data exception. Possible handshake rejection",exception);
+                            webSocketListener.onWebsocketError(this, exception);
+                            flushAndClose(CloseFrame.NEVER_CONNECTED, exception.getMessage(), false);
+                            return false;
+                        }
+                    }
+                }
+            }catch (InvalidHandshakeException exception){
+                logger.trace("Closing due to invalid handshake",exception);
+                close(exception);
+            }
+        }catch (Exception exception){
+            close(exception);
+        }
+        return false;
+    }
+    private void decodeFrame(ByteBuffer buffer){
+        List<FrameData> frameData;
+        try {
+            frameData = draft.translateFrame(buffer);
+            for (FrameData frame : frameData){
+                logger.trace("matched frame:{}",frame);
+                draft.processFrame(this, frame);
+            }
+        }catch (InvalidDataException exception){
+            logger.error("Closing due to invalid data in frame");
+            webSocketListener.onWebsocketError(this, exception);
+            close(exception);
+        }catch (Error error){
+            Exception exception = new Exception(error);
+            webSocketListener.onWebsocketError(this, exception);
+        }
+    }
+    public synchronized void close(int code, String message, boolean remote){
+        if(readyState != ReadyState.CLOSING && readyState != ReadyState.CLOSED){
+            if(readyState == ReadyState.OPEN){
+                if(code == CloseFrame.ABNORMAL_CLOSE){
+                    assert (!remote);
+                    readyState = ReadyState.CLOSING;
+                    flushAndClose(code, message, false);
+                    return;
+                }
+            }
+            readyState = ReadyState.CLOSING;
+            tmpHandshakeBytes = null;
+        }
+    }
     @Override
     public void close(int code, String message) {
 
@@ -112,12 +264,71 @@ public class WebSocketImpl implements WebSocket{
     public void close(int code) {
 
     }
+    public void close(Exception exception){}
+
 
     @Override
     public void close() {
 
     }
 
+    public synchronized void flushAndClose(int code, String message, boolean remote){
+        if(flushAndCloseState){
+            return;
+        }
+        closeCode = code;
+        closeMessage = message;
+        closedRemotely = remote;
+        flushAndCloseState = true;
+        webSocketListener.onWriteDemand(this);
+
+        try {
+            webSocketListener.onWebSocketClosing(this, code, message, remote);
+        }catch (RuntimeException exception){
+            logger.error("Exception in onWebSocketClosing");
+            webSocketListener.onWebsocketError(this, exception);
+        }
+        if(Objects.nonNull(draft)){
+            draft.reset();
+        }
+        clientHandshake = null;
+    }
+    public synchronized void closeConnection(int code, String message, boolean remote){
+        if(readyState == ReadyState.CLOSED){
+            return;
+        }
+        if(readyState == ReadyState.OPEN){
+            if(code == CloseFrame.ABNORMAL_CLOSE){
+                readyState = ReadyState.CLOSING;
+            }
+        }
+        if(Objects.nonNull(selectionKey)){
+            selectionKey.channel();
+        }
+        if(Objects.nonNull(channel)){
+            try {
+                channel.close();
+            }catch (IOException exception){
+                if(Objects.nonNull(exception.getMessage())&& "Broken pipe".equals(exception.getMessage())){
+                    logger.trace("Caught IOException: Broken pipe during closeConnection",exception);
+                }else{
+                    logger.error("Exception during channel.close()",exception);
+                    webSocketListener.onWebsocketError(this,exception);
+                }
+            }
+        }
+
+        try {
+            this.webSocketListener.onWebSocketClose(this, code, message, remote);
+        }catch (RuntimeException exception){
+            webSocketListener.onWebsocketError(this, exception);
+        }
+        if(Objects.nonNull(draft)){
+            draft.reset();
+        }
+        clientHandshake = null;
+        readyState = ReadyState.CLOSED;
+    }
     @Override
     public void closeConnection(int code, String message) {
 

@@ -16,6 +16,7 @@ public class CloseFrame extends ControlFrame{
      */
     public static final int PROTOCOL_ERROR = 1002;
     public static final int ABNORMAL_CLOSE = 1006;
+    public static final int NEVER_CONNECTED = -1;
 
     public CloseFrame(OpCode opCode) {
         super(opCode);

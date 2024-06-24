@@ -75,7 +75,7 @@ public interface WebSocketListener {
      * @param conn
      * @param handshakeData
      */
-    void onWebSocketClose(WebSocket conn, HandshakeData handshakeData);
+    void onWebSocketClose(WebSocket conn, int code, String reason, boolean remote);
 
     /**
      *
