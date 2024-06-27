@@ -402,6 +402,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         WebSocketImpl webSocketImpl = webSocketServerFactory.createdWebSocket(this, draftLists);
         webSocketImpl.setSelectionKey(channel.register(selector, SelectionKey.OP_READ, webSocketImpl));
 
+        webSocketImpl.setChannel(channel);
         iterator.remove();
         allocateBuffers(webSocketImpl);
     }
@@ -466,7 +467,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         return ByteBuffer.allocate(DEFAULT_READ_BUFFER_SIZE);
     }
     /**
-     * 是否接收连接
+     * 是否接收连
      *
      * @param key
      * @return

@@ -72,8 +72,6 @@ public interface WebSocketListener {
     /**
      * 显示调用或者客户端连接中断时调用
      *
-     * @param conn
-     * @param handshakeData
      */
     void onWebSocketClose(WebSocket conn, int code, String reason, boolean remote);
 
