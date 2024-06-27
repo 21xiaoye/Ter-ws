@@ -56,7 +56,7 @@ public class WebSocketImpl implements WebSocket{
      * Á¬½Ó×´Ì¬
      */
     private volatile ReadyState readyState = ReadyState.NOT_YET_CONNECTED;
-    private List<Draft> draftList;
+    private List<Draft> knowDraft;
     private Draft draft = null;
     private Role role;
 
@@ -72,10 +72,10 @@ public class WebSocketImpl implements WebSocket{
         this(webSocketListener, (Draft) null);
         this.role = Role.SERVER;
         if(Objects.isNull(draftList) || draftList.isEmpty()){
-            draftList = new ArrayList<>();
-            draftList.add(new Draft_6455());
+            this.knowDraft = new ArrayList<>();
+            this.knowDraft.add(new Draft_6455());
         }else{
-            this.draftList = draftList;
+            this.knowDraft = draftList;
         }
     }
     public WebSocketImpl(WebSocketListener webSocketListener, Draft draft){
@@ -120,7 +120,7 @@ public class WebSocketImpl implements WebSocket{
     private boolean decodeHandshake(ByteBuffer socketBufferNew){
         ByteBuffer socketBuffer;
         if(tmpHandshakeBytes.capacity() == 0){
-            socketBuffer =socketBufferNew;
+            socketBuffer = socketBufferNew;
         }else{
             if(tmpHandshakeBytes.remaining() < socketBufferNew.remaining()){
                 ByteBuffer buffer = ByteBuffer.allocate(tmpHandshakeBytes.capacity() + socketBufferNew.remaining());
@@ -138,7 +138,7 @@ public class WebSocketImpl implements WebSocket{
             try {
                 if(role == Role.SERVER){
                     if(Objects.isNull(draft)){
-                        for (Draft d : draftList) {
+                        for (Draft d : knowDraft) {
                             d = d.copyInstance();
                             try {
                                 d.setRole(role);
