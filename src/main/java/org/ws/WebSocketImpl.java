@@ -163,7 +163,9 @@ public class WebSocketImpl implements WebSocket{
                                         webSocketListener.onWebsocketError(this, exception);
                                         return false;
                                     }
+                                    write(d.createHandshake(d.postProcessHandshakeResponseAsServer(handshake,serverHandshakeBuilder)));
                                     draft = d;
+                                    open(serverHandshakeBuilder);
                                     return true;
                                 }
                             }catch (InvalidHandshakeException exception){
@@ -377,6 +379,34 @@ public class WebSocketImpl implements WebSocket{
         return null;
     }
 
+    private void open(HandshakeData handshakeData){
+        logger.trace("open using draft:{}", draft);
+        readyState = ReadyState.OPEN;
+        updateLastPong();
+        try {
+            webSocketListener.onWebSocketOpen(this, handshakeData);
+        }catch (RuntimeException exception){
+            webSocketListener.onWebsocketError(this, exception);
+        }
+    }
+    public void updateLastPong() {
+        this.lastPong = System.nanoTime();
+    }
+
+    private void write(List<ByteBuffer> buffers){
+        synchronized (synchronizerWriteObject){
+            for (ByteBuffer buffer : buffers){
+                write(buffer);
+            }
+        }
+    }
+
+    private void write(ByteBuffer buffer){
+        logger.trace("write({}):{}", buffer.remaining(),
+                buffer.remaining() > 1000 ? "too big to display" : new String(buffer.array()));
+        outQueue.add(buffer);
+        webSocketListener.onWriteDemand(this);
+    }
     @Override
     public boolean isOpen() {
         return false;

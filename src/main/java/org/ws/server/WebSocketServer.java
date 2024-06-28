@@ -203,7 +203,13 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
 
     @Override
     public void onWriteDemand(WebSocket conn) {
-
+        WebSocketImpl webSocket = (WebSocketImpl) conn;
+        try {
+            ((WebSocketImpl) conn).getSelectionKey().interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+        }catch (CancelledKeyException exception){
+            webSocket.outQueue.clear();
+        }
+        selector.wakeup();
     }
     @Override
     public final void onWebSocketClose(WebSocket conn, int code, String reason, boolean remote) {

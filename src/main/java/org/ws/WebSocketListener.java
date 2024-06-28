@@ -22,7 +22,7 @@ public interface WebSocketListener {
      * @param draft
      * @param request
      * @return
-     * @throws com.sun.media.sound.InvalidDataException
+     * @throws InvalidDataException
      */
     ServerHandshakeBuilder onWebSocketHandshakeReceivedAsServer(WebSocket conn, Draft draft, ClientHandshake request) throws InvalidDataException;
 
@@ -32,7 +32,7 @@ public interface WebSocketListener {
      * @param conn
      * @param request
      * @param response
-     * @throws com.sun.media.sound.InvalidDataException
+     * @throws InvalidDataException
      */
     void onWebsocketHandshakeReceivedAsClient(WebSocket conn, ClientHandshake request, ServerHandshake response) throws InvalidDataException;
 
@@ -41,7 +41,7 @@ public interface WebSocketListener {
      *
      * @param conn
      * @param request
-     * @throws com.sun.media.sound.InvalidDataException
+     * @throws InvalidDataException
      */
     void onWebsocketHandshakeSentAsClient(WebSocket conn, ClientHandshake request) throws InvalidDataException;
 

@@ -20,7 +20,8 @@ public class ChatServer extends WebSocketServer{
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake clientHandshake) {
-
+        System.out.println(
+                conn.getRemoteSocketAddress().getAddress().getHostAddress() + " entered the room!");
     }
 
     @Override
