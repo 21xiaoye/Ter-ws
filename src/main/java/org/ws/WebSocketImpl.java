@@ -152,9 +152,9 @@ public class WebSocketImpl implements WebSocket{
                                 handshakeState = d.acceptHandshakeAsServer(handshake);
                                 if(handshakeState == HandshakeState.MATCHED){
                                     resourceDescriptor = handshake.getResourceDescriptor();
-                                    ServerHandshakeBuilder serverHandshakeBuilder;
+                                    ServerHandshakeBuilder response;
                                     try {
-                                        serverHandshakeBuilder = webSocketListener.onWebSocketHandshakeReceivedAsServer(this, d, handshake);
+                                        response = webSocketListener.onWebSocketHandshakeReceivedAsServer(this, d, handshake);
                                     }catch (InvalidDataException exception){
                                         logger.trace("Closing due to wrong handshake, Possible handshake rejection",exception);
                                         return false;
@@ -163,9 +163,9 @@ public class WebSocketImpl implements WebSocket{
                                         webSocketListener.onWebsocketError(this, exception);
                                         return false;
                                     }
-                                    write(d.createHandshake(d.postProcessHandshakeResponseAsServer(handshake,serverHandshakeBuilder)));
+                                    write(d.createHandshake(d.postProcessHandshakeResponseAsServer(handshake, response)));
                                     draft = d;
-                                    open(serverHandshakeBuilder);
+                                    open(handshake);
                                     return true;
                                 }
                             }catch (InvalidHandshakeException exception){
@@ -371,7 +371,7 @@ public class WebSocketImpl implements WebSocket{
 
     @Override
     public InetSocketAddress getRemoteSocketAddress() {
-        return null;
+        return webSocketListener.getRemoteSocketAddress(this);
     }
 
     @Override

@@ -15,7 +15,6 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
-import java.security.Key;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -141,7 +140,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
     /**
      * 返回所有客户端连接
      *
-     * @return
+     * @returnconnections
      */
     public Collection<WebSocket> getConnections(){
         synchronized (connections){
@@ -177,7 +176,9 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
 
     @Override
     public void onWebSocketOpen(WebSocket conn, HandshakeData handshakeData) {
-        onOpen(conn, (ClientHandshake) handshakeData);
+        if(addConnection(conn)){
+            onOpen(conn, (ClientHandshake) handshakeData);
+        }
     }
 
     @Override
@@ -357,6 +358,17 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             return false;
         }
         return true;
+    }
+
+    protected boolean addConnection(WebSocket webSocket){
+        if(!isClosed.get()){
+            synchronized (connections){
+                return this.connections.add(webSocket);
+            }
+        }else {
+            webSocket.close(CloseFrame.GOING_AWAY);
+            return false;
+        }
     }
 
     private void handleFatal(WebSocket conn, Exception exception){
