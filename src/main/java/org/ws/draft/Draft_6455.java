@@ -4,15 +4,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.ws.WebSocketImpl;
 import org.ws.enums.HandshakeState;
+import org.ws.enums.Role;
 import org.ws.exceptions.InvalidDataException;
 import org.ws.exceptions.InvalidHandshakeException;
+import org.ws.exceptions.NotSendAbleException;
 import org.ws.framing.FrameData;
+import org.ws.framing.TextFrame;
 import org.ws.handshake.ClientHandshake;
 import org.ws.handshake.HandshakeBuild;
 import org.ws.handshake.ServerHandshake;
 import org.ws.handshake.ServerHandshakeBuilder;
 import org.ws.protocols.IProtocol;
 import org.ws.protocols.Protocol;
+import org.ws.utils.CharsetFunctions;
 
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
@@ -123,6 +127,102 @@ public class Draft_6455 extends Draft{
     @Override
     public HandshakeState acceptHandshakeAsClient(ClientHandshake request, ServerHandshake response) throws InvalidHandshakeException {
         return null;
+    }
+
+    @Override
+    public ByteBuffer createBinaryFrame(FrameData frameData) {
+        return createByteBufferFromFrameData(frameData);
+    }
+
+    private ByteBuffer createByteBufferFromFrameData(FrameData frameData){
+        ByteBuffer payloadData = frameData.getPayloadData();
+        boolean mask = role == Role.CLIENT;
+        int sizeBytes = getSizeBytes(payloadData);
+        ByteBuffer buffer = ByteBuffer.allocate(1 + (sizeBytes > 1 ? sizeBytes + 1 : sizeBytes) + (mask ? 4 : 0) + payloadData.remaining());
+        byte one = (byte) (frameData.isFin() ? -128 : 0);
+         one |= frameData.getOpcode().getCode();
+         if(frameData.isRSV1()){
+             one |= getRSVByte(1);
+         }
+         if(frameData.isRSV2()){
+             one |= getRSVByte(2);
+         }
+         if(frameData.isRSV3()){
+             one |= getRSVByte(3);
+         }
+
+         buffer.put(one);
+        byte[] payloadLengthBytes = toByteArray(payloadData.remaining(), sizeBytes);
+        assert (payloadLengthBytes.length == sizeBytes);
+        if(sizeBytes == 1){
+            buffer.put((byte) (payloadLengthBytes[0] | getMaskByte(mask)));
+        } else if (sizeBytes == 2) {
+            buffer.put((byte) ((byte) 126 | getMaskByte(mask)));
+            buffer.put(payloadLengthBytes);
+        }else if(sizeBytes == 8){
+            buffer.put((byte) ((byte)127 | getMaskByte(mask)));
+            buffer.put(payloadLengthBytes);
+        }else{
+            throw new IllegalStateException("Size representation not supported/specified");
+        }
+        if(mask){
+            ByteBuffer maskKey = ByteBuffer.allocate(4);
+            maskKey.putInt(reusableRandom.nextInt());
+            buffer.put(maskKey.array());
+            for (int i =0; payloadData.hasRemaining();i++){
+                buffer.put((byte) (payloadData.get( i % 4)));
+            }
+        }else {
+            buffer.put(payloadData);
+            payloadData.flip();
+        }
+        assert (buffer.remaining() == 0) : buffer.remaining();
+        buffer.flip();
+        return buffer;
+    }
+    private int getSizeBytes(ByteBuffer buffer){
+        if(buffer.remaining() <= 125) {
+            return 1;
+        }
+        if(buffer.remaining() < 65535){
+            return 2;
+        }
+        return 0;
+    }
+    private byte getRSVByte(int rsv) {
+        switch (rsv) {
+            case 1 : // 0100 0000
+                return 0x40;
+            case 2 : // 0010 0000
+                return 0x20;
+            case 3 : // 0001 0000
+                return 0x10;
+            default:
+                return 0;
+        }
+    }
+    private byte[] toByteArray(long val, int byteCount) {
+        byte[] buffer = new byte[byteCount];
+        int highest = 8 * byteCount - 8;
+        for (int i = 0; i < byteCount; i++) {
+            buffer[i] = (byte) (val >>> (highest - 8 * i));
+        }
+        return buffer;
+    }
+    private byte getMaskByte(boolean mask) {
+        return mask ? (byte) -128 : 0;
+    }
+    @Override
+    public List<FrameData> createFrame(String text, boolean mask) {
+        TextFrame textFrame = new TextFrame();
+        textFrame.setUnMaskedPayload(ByteBuffer.wrap(CharsetFunctions.utf8Bytes(text)));
+        textFrame.setTransferMasked(mask);
+        try {
+            textFrame.isValid();
+        }catch (InvalidDataException exception){
+            throw new NotSendAbleException(exception);
+        }
+        return Collections.singletonList(textFrame);
     }
 
     @Override

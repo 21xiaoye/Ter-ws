@@ -22,6 +22,7 @@ public class ChatServer extends WebSocketServer{
     public void onOpen(WebSocket conn, ClientHandshake clientHandshake) {
         System.out.println(
                 conn.getRemoteSocketAddress().getAddress().getHostAddress() + " entered the room!");
+        conn.send("连接成功......");
     }
 
     @Override

@@ -5,10 +5,12 @@ import org.slf4j.LoggerFactory;
 import org.ws.draft.Draft;
 import org.ws.draft.Draft_6455;
 import org.ws.enums.HandshakeState;
+import org.ws.enums.OpCode;
 import org.ws.enums.ReadyState;
 import org.ws.enums.Role;
 import org.ws.exceptions.InvalidDataException;
 import org.ws.exceptions.InvalidHandshakeException;
+import org.ws.exceptions.WebsocketNotConnectedException;
 import org.ws.framing.CloseFrame;
 import org.ws.framing.FrameData;
 import org.ws.handshake.ClientHandshake;
@@ -18,12 +20,15 @@ import org.ws.handshake.ServerHandshakeBuilder;
 import org.ws.protocols.IProtocol;
 import org.ws.server.WebSocketServer;
 
+import javax.management.relation.RoleStatus;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
 import java.nio.channels.SelectionKey;
+import java.nio.file.LinkOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
@@ -341,7 +346,10 @@ public class WebSocketImpl implements WebSocket{
 
     @Override
     public void send(String text) {
-
+        if(Objects.isNull(text)){
+            throw new IllegalArgumentException("Cannot send 'null' data to a WebSocketImpl");
+        }
+        send(draft.createFrame(text, role == Role.CLIENT));
     }
 
     @Override
@@ -353,7 +361,20 @@ public class WebSocketImpl implements WebSocket{
     public void send(byte[] bytes) {
 
     }
-
+    private void send(Collection<FrameData> frames){
+        if(!isOpen()){
+            throw new WebsocketNotConnectedException();
+        }
+        if(Objects.isNull(frames)){
+            throw new IllegalArgumentException();
+        }
+        ArrayList<ByteBuffer> outFrameList = new ArrayList<>();
+        for (FrameData frameData : frames) {
+            logger.trace("send frame :{]",frameData);
+            outFrameList.add(draft.createBinaryFrame(frameData));
+        }
+        write(outFrameList);
+    }
     @Override
     public void sendFrame(FrameData frameData) {
 
@@ -409,7 +430,7 @@ public class WebSocketImpl implements WebSocket{
     }
     @Override
     public boolean isOpen() {
-        return false;
+        return readyState == ReadyState.OPEN;
     }
 
     @Override

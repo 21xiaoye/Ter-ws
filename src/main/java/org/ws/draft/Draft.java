@@ -34,6 +34,8 @@ public abstract class Draft{
             throws InvalidHandshakeException;
     public abstract HandshakeState acceptHandshakeAsClient(ClientHandshake request,
                                                            ServerHandshake response) throws InvalidHandshakeException;
+    public abstract ByteBuffer createBinaryFrame(FrameData frameData);
+    public abstract List<FrameData> createFrame(String text, boolean mask);
     public HandshakeData translateHandshake(ByteBuffer buf) throws InvalidHandshakeException {
         return translateHandshakeHttp(buf,null);
     }
@@ -179,22 +181,7 @@ public abstract class Draft{
         buffer.flip();
         return Collections.singletonList(buffer);
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     public void setRole(Role role) {
         this.role = role;
     }
-
 }

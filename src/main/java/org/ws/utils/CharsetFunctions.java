@@ -18,7 +18,9 @@ public class CharsetFunctions {
     public static String stringAscii(byte[] bytes, int offset, int length) {
         return new String(bytes, offset, length, StandardCharsets.US_ASCII);
     }
-
+    public static byte[] utf8Bytes(String s) {
+        return s.getBytes(StandardCharsets.UTF_8);
+    }
 
 
 
