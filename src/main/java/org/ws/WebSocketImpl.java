@@ -20,13 +20,11 @@ import org.ws.handshake.ServerHandshakeBuilder;
 import org.ws.protocols.IProtocol;
 import org.ws.server.WebSocketServer;
 
-import javax.management.relation.RoleStatus;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
 import java.nio.channels.SelectionKey;
-import java.nio.file.LinkOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
