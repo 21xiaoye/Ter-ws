@@ -36,6 +36,7 @@ public abstract class Draft{
                                                            ServerHandshake response) throws InvalidHandshakeException;
     public abstract ByteBuffer createBinaryFrame(FrameData frameData);
     public abstract List<FrameData> createFrame(String text, boolean mask);
+    public abstract List<FrameData> createFrame(ByteBuffer byteBuffer, boolean mask);
     public HandshakeData translateHandshake(ByteBuffer buf) throws InvalidHandshakeException {
         return translateHandshakeHttp(buf,null);
     }
@@ -52,7 +53,7 @@ public abstract class Draft{
         if(strings.length != 3){
             throw new InvalidHandshakeException();
         }
-        if(role == Role.CLIENT){
+        if(Role.CLIENT.equals(role)){
             handshakeBuild = translateHandshakeHttpClient(strings, line);
         }else{
             handshakeBuild = translateHandshakeHttpServer(strings, line);

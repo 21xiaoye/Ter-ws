@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.ws.draft.Draft;
 import org.ws.draft.Draft_6455;
 import org.ws.enums.HandshakeState;
-import org.ws.enums.OpCode;
 import org.ws.enums.ReadyState;
 import org.ws.enums.Role;
 import org.ws.exceptions.InvalidDataException;
@@ -13,6 +12,7 @@ import org.ws.exceptions.InvalidHandshakeException;
 import org.ws.exceptions.WebsocketNotConnectedException;
 import org.ws.framing.CloseFrame;
 import org.ws.framing.FrameData;
+import org.ws.framing.PingFrame;
 import org.ws.handshake.ClientHandshake;
 import org.ws.handshake.HandshakeData;
 import org.ws.handshake.ServerHandshake;
@@ -25,10 +25,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
 import java.nio.channels.SelectionKey;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -125,6 +122,7 @@ public class WebSocketImpl implements WebSocket{
         if(tmpHandshakeBytes.capacity() == 0){
             socketBuffer = socketBufferNew;
         }else{
+            // 容量不够分配容量
             if(tmpHandshakeBytes.remaining() < socketBufferNew.remaining()){
                 ByteBuffer buffer = ByteBuffer.allocate(tmpHandshakeBytes.capacity() + socketBufferNew.remaining());
                 tmpHandshakeBytes.flip();
@@ -146,17 +144,20 @@ public class WebSocketImpl implements WebSocket{
                             try {
                                 d.setRole(role);
                                 socketBuffer.reset();
+                                // 获取客户端握手数据
                                 HandshakeData handshakeData =  d.translateHandshake(socketBuffer);
                                 if(!(handshakeData instanceof ClientHandshake)){
                                     logger.trace("Closing due to wrong handshake");
                                     return false;
                                 }
                                 ClientHandshake handshake = (ClientHandshake) handshakeData;
+                                // 验证握手
                                 handshakeState = d.acceptHandshakeAsServer(handshake);
                                 if(handshakeState == HandshakeState.MATCHED){
                                     resourceDescriptor = handshake.getResourceDescriptor();
                                     ServerHandshakeBuilder response;
                                     try {
+                                        // 服务端响应
                                         response = webSocketListener.onWebSocketHandshakeReceivedAsServer(this, d, handshake);
                                     }catch (InvalidDataException exception){
                                         logger.trace("Closing due to wrong handshake, Possible handshake rejection",exception);
@@ -352,12 +353,14 @@ public class WebSocketImpl implements WebSocket{
 
     @Override
     public void send(ByteBuffer byteBuffer) {
-
+        if (Objects.isNull(byteBuffer)) {
+            throw new IllegalArgumentException("Cannot send 'null' data to a WebSocketImpl.");
+        }
+        send(draft.createFrame(byteBuffer, Role.CLIENT.equals(role)));
     }
-
     @Override
     public void send(byte[] bytes) {
-
+        send(ByteBuffer.wrap(bytes));
     }
     private void send(Collection<FrameData> frames){
         if(!isOpen()){
@@ -375,17 +378,18 @@ public class WebSocketImpl implements WebSocket{
     }
     @Override
     public void sendFrame(FrameData frameData) {
-
+        send(Collections.singletonList(frameData));
     }
 
     @Override
     public void sendPing() {
-
+        PingFrame pingFrame = webSocketListener.onPreparePing(this);
+        sendFrame(pingFrame);
     }
 
     @Override
     public boolean hasBufferedData() {
-        return false;
+        return !this.inQueue.isEmpty();
     }
 
     @Override
@@ -395,7 +399,7 @@ public class WebSocketImpl implements WebSocket{
 
     @Override
     public InetSocketAddress getLocalSocketAddress() {
-        return null;
+        return webSocketListener.getLocalSocketAddress(this);
     }
 
     private void open(HandshakeData handshakeData){
@@ -428,36 +432,29 @@ public class WebSocketImpl implements WebSocket{
     }
     @Override
     public boolean isOpen() {
-        return readyState == ReadyState.OPEN;
+        return ReadyState.OPEN.equals(readyState);
     }
 
     @Override
     public boolean isClosing() {
-        return false;
+        return ReadyState.CLOSING.equals(readyState);
     }
 
     @Override
     public boolean isClosed() {
-        return false;
+        return ReadyState.CLOSED.equals(readyState);
     }
 
     @Override
     public ReadyState getReadyState() {
-        return null;
+        return readyState;
     }
-
-    @Override
-    public <T> void setAttachment(T attachment) {
-
-    }
-    @Override
-    public <T> T getAttachment() {
-        return null;
-    }
-
     @Override
     public IProtocol getProtocol() {
-        return null;
+        if(Objects.isNull(draft)){
+            return null;
+        }
+        return ((Draft_6455) draft).getProtocol();
     }
 
     public SelectionKey getSelectionKey() {

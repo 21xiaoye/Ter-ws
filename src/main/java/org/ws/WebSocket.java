@@ -121,23 +121,6 @@ public interface WebSocket {
     ReadyState getReadyState();
 
     /**
-     * 设置连接附加对象
-     *
-     * @param attachment
-     * @param <T>
-     */
-
-    <T> void setAttachment(T attachment);
-
-    /**
-     * 获取连接附加对象
-     *
-     * @return
-     * @param <T>
-     */
-    <T> T getAttachment();
-
-    /**
      * 返回WebSocket需要的Sec-WebSocket-Protocol
      *
      * @return

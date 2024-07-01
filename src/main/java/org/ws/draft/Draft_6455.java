@@ -8,6 +8,7 @@ import org.ws.enums.Role;
 import org.ws.exceptions.InvalidDataException;
 import org.ws.exceptions.InvalidHandshakeException;
 import org.ws.exceptions.NotSendAbleException;
+import org.ws.framing.BinaryFrame;
 import org.ws.framing.FrameData;
 import org.ws.framing.TextFrame;
 import org.ws.handshake.ClientHandshake;
@@ -223,6 +224,19 @@ public class Draft_6455 extends Draft{
             throw new NotSendAbleException(exception);
         }
         return Collections.singletonList(textFrame);
+    }
+
+    @Override
+    public List<FrameData> createFrame(ByteBuffer byteBuffer, boolean mask) {
+        BinaryFrame binaryFrame = new BinaryFrame();
+        binaryFrame.setUnMaskedPayload(byteBuffer);
+        binaryFrame.setTransferMasked(mask);
+        try {
+            binaryFrame.isValid();
+        }catch (InvalidDataException exception){
+            throw new NotSendAbleException(exception);
+        }
+        return Collections.singletonList(binaryFrame);
     }
 
     @Override
